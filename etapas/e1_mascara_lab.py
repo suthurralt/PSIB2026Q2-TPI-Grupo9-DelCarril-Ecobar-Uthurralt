@@ -2,8 +2,7 @@
 
 Problema: varias imágenes de SkinDisNet tienen el fondo recortado y reemplazado
 por blanco. Esos píxeles no son piel y, si se incluyen, distorsionan la
-umbralización (Otsu separa fondo vs. resto) y la GLCM (pares 255-255 y saltos
-piel/fondo).
+umbralización.
 
 Criterio para el fondo:
   1. Candidatos: píxeles muy claros (V alto) y casi sin color (S baja) en HSV.
@@ -29,12 +28,12 @@ S_MAX_FONDO = 25           # saturación máxima (0-255) para ser candidato a fo
 AREA_MIN_FONDO = 0.005     # fracción mínima de la imagen para aceptar una región como fondo
 MARGEN_PX = 5              # píxeles que se descartan en el borde piel/fondo
 
-
+# Se genera la máscara del fondo blanco
 def mascara_fondo(rgb, v_min=V_MIN_FONDO, s_max=S_MAX_FONDO,
                   area_min=AREA_MIN_FONDO, margen=MARGEN_PX):
     """Devuelve una máscara booleana con True en los píxeles de fondo blanco."""
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-    candidatos = ((hsv[..., 2] >= v_min) & (hsv[..., 1] <= s_max)).astype(np.uint8)
+    candidatos = ((hsv[..., 2] >= v_min) & (hsv[..., 1] <= s_max)).astype(np.uint8)  # candidatos a fondo (cumplen con V alto y S bajo)
 
     # Cierre chico para unir el fondo cortado por ruido/artefactos JPEG
     k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
@@ -78,7 +77,7 @@ def aplicar_mascara(canal, mascara, relleno=np.nan):
     salida[~mascara] = relleno
     return salida
 
-
+# IMPORTANTE: devuelve la máscara y L a b sin enmascarar
 def procesar_etapa1(rgb, **kwargs_mascara):
     """Aplica la etapa 1 a una imagen RGB.
 
@@ -87,6 +86,7 @@ def procesar_etapa1(rgb, **kwargs_mascara):
     """
     mascara = mascara_piel(rgb, **kwargs_mascara)
     lab = rgb_a_lab(rgb)
+    
     return {
         "rgb": rgb,
         "mascara": mascara,
