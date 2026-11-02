@@ -28,6 +28,38 @@ S_MAX_FONDO = 25           # saturación máxima (0-255) para ser candidato a fo
 AREA_MIN_FONDO = 0.005     # fracción mínima de la imagen para aceptar una región como fondo
 MARGEN_PX = 5              # píxeles que se descartan en el borde piel/fondo
 
+# Se genera la máscara del fondo blanco
+def mascara_fondo(rgb, v_min=V_MIN_FONDO, s_max=S_MAX_FONDO,
+                  area_min=AREA_MIN_FONDO, margen=MARGEN_PX):
+    """Devuelve una máscara booleana con True en los píxeles de fondo blanco."""
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    candidatos = ((hsv[..., 2] >= v_min) & (hsv[..., 1] <= s_max)).astype(np.uint8)  # candidatos a fondo (cumplen con V alto y S bajo)
+
+    # Cierre chico para unir el fondo cortado por ruido/artefactos JPEG
+    k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    candidatos = cv2.morphologyEx(candidatos, cv2.MORPH_CLOSE, k3)
+
+    # Etiquetado de componentes conexas: solo las que tocan el borde son fondo
+    alto, ancho = candidatos.shape
+    n, etiquetas, stats, _ = cv2.connectedComponentsWithStats(candidatos, connectivity=8)
+    area_min_px = area_min * alto * ancho
+    fondo = np.zeros((alto, ancho), dtype=np.uint8)
+    for i in range(1, n):
+        x, y, w, h, area = stats[i]
+        toca_borde = x == 0 or y == 0 or x + w == ancho or y + h == alto
+        if toca_borde and area >= area_min_px:
+            fondo[etiquetas == i] = 1
+
+    if margen > 0 and fondo.any():
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * margen + 1, 2 * margen + 1))
+        fondo = cv2.dilate(fondo, k)
+    return fondo.astype(bool)
+
+
+def mascara_piel(rgb, **kwargs):
+    """Máscara booleana con True en los píxeles válidos (piel). Complemento del fondo."""
+    return ~mascara_fondo(rgb, **kwargs)
+
 
 def rgb_a_lab(rgb):
     """Convierte RGB uint8 a CIELAB en float32.
@@ -39,86 +71,91 @@ def rgb_a_lab(rgb):
     return cv2.cvtColor(rgb.astype(np.float32) / 255.0, cv2.COLOR_RGB2Lab)
 
 
-def procesar_etapa1(rgb):
+def aplicar_mascara(canal, mascara, relleno=np.nan):
+    """Copia del canal con los píxeles fuera de la máscara reemplazados por `relleno`."""
+    salida = canal.astype(np.float32).copy()
+    salida[~mascara] = relleno
+    return salida
+
+# IMPORTANTE: devuelve la máscara y L a b sin enmascarar
+def procesar_etapa1(rgb, **kwargs_mascara):
+    """Aplica la etapa 1 a una imagen RGB.
+
+    Devuelve un dict con: rgb, mascara (True = piel), L, a, b (float32, sin
+    enmascarar) y frac_fondo (fracción de la imagen descartada).
     """
-    Procesa la ROI (512x512) en memoria RAM.
-    
-    Devuelve un diccionario con:
-      - 'rgb': imagen original
-      - 'mascara': matriz booleana (True en toda la ROI)
-      - 'L': canal L* (luminosidad/textura)
-      - 'a': canal a* (eritema)
-      - 'b': canal b* (amarillo/azul)
-    """
+    mascara = mascara_piel(rgb, **kwargs_mascara)
     lab = rgb_a_lab(rgb)
-    alto, ancho = rgb.shape[:2]
-
-    # Al no haber fondo blanco artificial, toda la ROI recortada se considera válida
-    mascara_valida = np.ones((alto, ancho), dtype=bool)
-
+    
     return {
         "rgb": rgb,
-        "mascara": mascara_valida,
+        "mascara": mascara,
         "L": lab[..., 0],
         "a": lab[..., 1],
-        "b": lab[..., 2]
+        "b": lab[..., 2],
+        "frac_fondo": float(1.0 - mascara.mean()),
     }
 
 
-def guardar_visualizacion_e1(res_e1, nombre_archivo, carpeta_salida="resultados/Etapa_1"):
-    """
-    Genera y guarda en disco una imagen comparativa (Original | L* Textura | a* Eritema)
-    en la carpeta unificada 'resultados/Etapa_1/'.
-    """
-    carpeta = Path(carpeta_salida)
-    carpeta.mkdir(parents=True, exist_ok=True)
-    
-    # Rango adaptativo de a* por percentiles
-    valores_a = res_e1["a"]
-    vmin_a = np.percentile(valores_a, 2)
-    vmax_a = np.percentile(valores_a, 98)
+def mostrar_etapa1(res, titulo="", rango_a=(0, 30)):
+    """Figura de control: RGB con el fondo marcado, máscara, L* y a* enmascarados."""
+    rgb_marcada = res["rgb"].copy()
+    rgb_marcada[~res["mascara"]] = (0, 120, 255)  # fondo descartado en azul
 
-    fig, ax = plt.subplots(1, 3, figsize=(12, 4))
-    
-    # 1. ROI RGB Original
-    ax[0].imshow(res_e1["rgb"])
-    ax[0].set_title("ROI Original (512x512)")
-    ax[0].axis("off")
-
-    # 2. Canal L* (Luminosidad / Textura)
-    im_l = ax[1].imshow(res_e1["L"], cmap="gray", vmin=0, vmax=100)
-    ax[1].set_title("Canal L* (Luminosidad)")
-    ax[1].axis("off")
-    fig.colorbar(im_l, ax=ax[1], fraction=0.046, pad=0.04)
-
-    # 3. Canal a* (Eritema / Inflamación)
-    im_a = ax[2].imshow(res_e1["a"], cmap="magma", vmin=vmin_a, vmax=vmax_a)
-    ax[2].set_title("Canal a* (Eritema)")
-    ax[2].axis("off")
-    fig.colorbar(im_a, ax=ax[2], fraction=0.046, pad=0.04)
-
+    fig, ax = plt.subplots(1, 4, figsize=(16, 4))
+    ax[0].imshow(res["rgb"])
+    ax[0].set_title(f"{titulo}\noriginal")
+    ax[1].imshow(rgb_marcada)
+    ax[1].set_title(f"fondo descartado: {100 * res['frac_fondo']:.1f}%")
+    im_l = ax[2].imshow(aplicar_mascara(res["L"], res["mascara"]), cmap="gray", vmin=0, vmax=100)
+    ax[2].set_title("L* (luminosidad)")
+    fig.colorbar(im_l, ax=ax[2], fraction=0.046)
+    im_a = ax[3].imshow(aplicar_mascara(res["a"], res["mascara"]), cmap="magma",
+                        vmin=rango_a[0], vmax=rango_a[1])
+    ax[3].set_title("a* (rojo)")
+    fig.colorbar(im_a, ax=ax[3], fraction=0.046)
+    for a in ax:
+        a.axis("off")
     fig.tight_layout()
-    
-    # Guarda en resultados/Etapa_1/e1_nombreImagen.png
-    nombre_base = Path(nombre_archivo).stem
-    ruta_salida = carpeta / f"e1_{nombre_base}.png"
-    fig.savefig(ruta_salida, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return ruta_salida
+    return fig
 
 
-if __name__ == "__main__":
-    from etapas.e0_normalizacion_roi import cargar_imagen_rgb
+# --------------------------------------------------------------------------
+# Guardado / carga de resultados
+# --------------------------------------------------------------------------
+def _escribir_png(ruta, imagen):
+    """cv2.imwrite no soporta rutas con acentos en Windows: se codifica y se escribe con numpy."""
+    ok, buf = cv2.imencode(".png", imagen)
+    if not ok:
+        raise IOError(f"No se pudo codificar {ruta}")
+    buf.tofile(str(ruta))
 
-    carpeta_rois = Path("datos/ROIs")
-    archivos_roi = sorted(list(carpeta_rois.glob("*.jpg")) + list(carpeta_rois.glob("*.png")))
 
-    if not archivos_roi:
-        print("No hay imágenes en datos/ROIs/. Guarda algunas desde la GUI primero.")
-    else:
-        print(f"Procesando {len(archivos_roi)} ROIs -> Guardando resultados en resultados/Etapa_1/\n")
-        for ruta in archivos_roi:
-            img_rgb = cargar_imagen_rgb(ruta)
-            res_e1 = procesar_etapa1(img_rgb)
-            guardar_visualizacion_e1(res_e1, ruta.name)
-        print("\n¡Listo! Revisa la carpeta resultados/Etapa_1/.")
+def guardar_etapa1(res, id_, carpeta):
+    """Guarda los resultados de una imagen en `carpeta` y devuelve las rutas.
+
+    Archivos (`id_` = nombre de la imagen original, p. ej. "TC (156)"):
+      - <id>_mascara.png      máscara de piel (blanco = piel, negro = fondo)
+      - <id>_enmascarada.png  imagen RGB con el fondo en negro (para mirar)
+      - <id>_lab.npz          L, a, b (float32) y mascara (bool): es lo que
+                              lee la etapa siguiente, sin pérdida de precisión
+    """
+    carpeta = Path(carpeta)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    rutas = {
+        "mascara": carpeta / f"{id_}_mascara.png",
+        "enmascarada": carpeta / f"{id_}_enmascarada.png",
+        "lab": carpeta / f"{id_}_lab.npz",
+    }
+    _escribir_png(rutas["mascara"], res["mascara"].astype(np.uint8) * 255)
+    enmascarada = res["rgb"].copy()
+    enmascarada[~res["mascara"]] = 0
+    _escribir_png(rutas["enmascarada"], cv2.cvtColor(enmascarada, cv2.COLOR_RGB2BGR))
+    np.savez_compressed(rutas["lab"], L=res["L"], a=res["a"], b=res["b"], mascara=res["mascara"])
+    return rutas
+
+
+def cargar_etapa1(ruta_npz):
+    """Lee un <id>_lab.npz guardado por guardar_etapa1. Devuelve dict con L, a, b y mascara."""
+    with np.load(ruta_npz) as d:
+        return {k: d[k] for k in ("L", "a", "b", "mascara")}
