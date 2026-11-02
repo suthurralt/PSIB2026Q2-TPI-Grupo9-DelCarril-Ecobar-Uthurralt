@@ -77,3 +77,14 @@ def cargar_rgb(ruta):
     if bgr is None:
         raise IOError(f"No se pudo leer {ruta}")
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+# Mantenemos TODO tal cual (listar_dataset, verificar_separacion, cargar_rgb)
+
+def cargar_imagen_individual(ruta_o_str):
+    """
+    Carga una imagen suelta (por ejemplo desde la carpeta 'Externas' 
+    o desde el selector de archivos de PyQt).
+    Retorna la imagen en RGB uint8.
+    """
+    ruta = Path(ruta_o_str)
+    return cargar_rgb(ruta)
