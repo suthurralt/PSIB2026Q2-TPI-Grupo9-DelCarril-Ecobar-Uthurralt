@@ -8,7 +8,7 @@ from skimage.feature import local_binary_pattern
 
 # Parámetros LBP
 P = 8
-R = 1
+R = 3
 METODO = "uniform"
 
 ZONAS = ["lesion", "borde", "centro", "perilesional"]
@@ -84,7 +84,7 @@ def procesar_todos_npz(
     carpeta_salida.mkdir(parents=True, exist_ok=True)
 
     archivos = sorted(
-        carpeta_entrada.glob("e4_roi_TC_*.npz")
+        carpeta_entrada.glob("e4_roi_*.npz")
     )
 
     filas = []

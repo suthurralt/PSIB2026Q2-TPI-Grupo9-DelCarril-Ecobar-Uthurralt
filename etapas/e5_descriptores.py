@@ -193,7 +193,7 @@ def procesar_todos_npz(
 
     carpeta_salida.mkdir(parents=True, exist_ok=True)
 
-    archivos = sorted(carpeta_npz.glob("e4_roi_TC*.npz"))
+    archivos = sorted(carpeta_npz.glob("e4_roi_*.npz"))
 
     if not archivos:
         print("No se encontraron archivos NPZ.")
