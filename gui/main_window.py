@@ -26,8 +26,7 @@ from etapas.e1_mascara_lab import procesar_etapa1, guardar_visualizacion_e1
 from etapas.e2_mejoramiento import procesar_etapa2, guardar_visualizacion_e2
 from etapas.e3_segmentacion_superpixeles import procesar_etapa3, guardar_visualizacion_e3
 from etapas.e4_morfologia import procesar_etapa4, guardar_visualizacion_e4, exportar_e4, pintar_zonas, _contorno
-from etapas import etapa5 as e5
-from etapas import etapa6 as e6
+from etapas import e6_clasificacion
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -41,7 +40,8 @@ class MainWindow(QMainWindow):
         self.imagenes_seleccionadas = []
         self.mascaras_automaticas_e3 = {}
         self.mascaras_manuales = {}
-        self.resultados_etapa5 = {}  # { ruta_imagen: dict con descriptores de forma/estructura radial/textura }
+        self.resultados_etapa5 = {}  # { ruta_imagen: resultado de e6_clasificacion.clasificar }
+        self.clasificador = None     # se lee de resultados/Etapa_5/clasificador.json al llegar a la Etapa 5
 
         # CONTENEDOR MULTIPANTALLA (QStackedWidget)
         self.stack = QStackedWidget()
@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.crear_pantalla_etapa(2, "Etapa 2: Mejoramiento y Resta Periférica", 1, 3, "Ir a Segmentación ->")) # Índice 2
         self.stack.addWidget(self.crear_pantalla_etapa(3, "Etapa 3: Segmentación (SLIC + K-Means)", 2, 4, "Ir a Morfología ->"))   # Índice 3
         self.stack.addWidget(self.crear_pantalla_etapa(4, "Etapa 4: Limpieza Morfológica", 3, 5, "Ir a Texturas ->"))             # Índice 4
-        self.stack.addWidget(self.crear_pantalla_etapa(5, "Etapa 5: Caracterización de Texturas", 4, 6, "Ir a Diagnóstico Final ->"))# Índice 5
+        self.stack.addWidget(self.crear_pantalla_etapa(5, "Etapa 5: Descriptores de Textura (GLCM + LBP)", 4, 6, "Ir a Diagnóstico Final ->"))# Índice 5
         self.stack.addWidget(self.crear_pantalla_6_diagnostico())                                                   # Índice 6
 
     # =========================================================================
@@ -202,14 +202,10 @@ class MainWindow(QMainWindow):
         header.addWidget(lbl_titulo)
         header.addStretch()
 
+        # Las columnas de descriptores se arman al mostrar el diagnóstico (dependen de clasificador.json)
         self.tabla_diagnostico = QTableWidget()
-        self.tabla_diagnostico.setColumnCount(4)
-        self.tabla_diagnostico.setHorizontalHeaderLabels([
-            "Imagen",
-            "Resultado Diagnóstico (regla de votos)",
-            "Ratio de Eritema (borde/centro)",
-            "Textura (ΔENT / ΔCON, borde−centro)"
-        ])
+        self.tabla_diagnostico.setColumnCount(2)
+        self.tabla_diagnostico.setHorizontalHeaderLabels(["Imagen", "Diagnóstico (regla de votos)"])
         self.tabla_diagnostico.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         layout.addLayout(header)
@@ -401,7 +397,11 @@ class MainWindow(QMainWindow):
             
             # Tomar la máscara refinada en E3 si el usuario la editó; si no, la automática de E3
             mascara_final = self.mascaras_manuales.get(path, res_e3["mascara_lesion"])
-            
+
+            nombre_exp = Path(path).name
+            if not nombre_exp.startswith("roi_"):
+              nombre_exp = f"roi_{nombre_exp}"
+        
             res_e4 = procesar_etapa4(mascara_final, res_e2)
             guardar_visualizacion_e4(res_e1, res_e4, path)
             exportar_e4(res_e1, res_e2, res_e4, path)
@@ -411,8 +411,25 @@ class MainWindow(QMainWindow):
 
         self.stack.setCurrentIndex(4)
 
+    def cargar_clasificador(self):
+        """Lee resultados/Etapa_5/clasificador.json (lo genera el notebook de descriptores)."""
+        if self.clasificador is None:
+            try:
+                self.clasificador = e6_clasificacion.cargar_clasificador()
+            except FileNotFoundError:
+                QMessageBox.critical(
+                    self, "Falta el clasificador",
+                    f"No se encontró {e6_clasificacion.RUTA_CLASIFICADOR}.\n"
+                    "Corré el notebook de elección de descriptores para generarlo."
+                )
+                return False
+        return True
+
     def ejecutar_e5_y_mostrar(self):
-        """Etapa 5: descriptores de forma, estructura radial y textura (etapas/etapa5.py)."""
+        """Etapa 5: descriptores de textura (GLCM + LBP) y regla de votos (etapas/e6_clasificacion.py)."""
+        if not self.cargar_clasificador():
+            return
+
         grid = self.grids[5]
         self.limpiar_grilla(grid)
 
@@ -427,60 +444,47 @@ class MainWindow(QMainWindow):
             mascara_final = self.mascaras_manuales.get(path, res_e3["mascara_lesion"])
             res_e4 = procesar_etapa4(mascara_final, res_e2)
 
-            descriptores = {}
-            descriptores.update(e5.descriptores_forma(res_e4["lesion"]))
-            descriptores.update(e5.descriptores_estructura_radial(
-                res_e2["a_suave"], res_e4["lesion"], res_e4["borde"], res_e4["centro"]
-            ))
-            descriptores.update(e5.descriptores_textura_glcm(
-                res_e2["L"], res_e4["borde"], res_e4["centro"]
-            ))
-            self.resultados_etapa5[path] = descriptores
+            # Descriptores sobre L* sin filtrar (el mismo que guarda exportar_e4) + votos
+            resultado = e6_clasificacion.clasificar(res_e1["L"], res_e4, self.clasificador)
+            self.resultados_etapa5[path] = resultado
 
-            card = self.crear_tarjeta_e5(os.path.basename(path), res_e1, res_e4, descriptores)
+            card = self.crear_tarjeta_e5(os.path.basename(path), res_e1, res_e4, resultado)
             grid.addWidget(card, idx // columnas, idx % columnas)
 
         self.stack.setCurrentIndex(5)
 
     def ejecutar_diagnostico_y_mostrar(self):
-        """Etapa 6: regla de votos (6 criterios, umbral >=4) sobre los descriptores de la Etapa 5."""
+        """Etapa 6: veredicto de la regla de votos para cada imagen + valor de cada descriptor usado."""
+        reglas = self.clasificador["descriptores"] if self.clasificador else []
+        encabezados = ["Imagen", "Diagnóstico (regla de votos)"] + [
+            f"{r['descriptor']}\n(tiña si {'>' if r['sentido'] == 'mayor' else '<'} {r['umbral']:.4g})" for r in reglas
+        ]
         self.tabla_diagnostico.setRowCount(0)
-
-        filas = {
-            path: self.resultados_etapa5[path]
-            for path in self.imagenes_seleccionadas
-            if path in self.resultados_etapa5
-        }
-        df = pd.DataFrame.from_dict(filas, orient="index") if filas else pd.DataFrame()
+        self.tabla_diagnostico.setColumnCount(len(encabezados))
+        self.tabla_diagnostico.setHorizontalHeaderLabels(encabezados)
 
         for row, path in enumerate(self.imagenes_seleccionadas):
             self.tabla_diagnostico.insertRow(row)
             self.tabla_diagnostico.setItem(row, 0, QTableWidgetItem(os.path.basename(path)))
 
-            if path not in df.index:
+            resultado = self.resultados_etapa5.get(path)
+            if resultado is None:
                 self.tabla_diagnostico.setItem(row, 1, QTableWidgetItem("Sin datos (falta pasar por Etapa 5)"))
-                self.tabla_diagnostico.setItem(row, 2, QTableWidgetItem("N/D"))
-                self.tabla_diagnostico.setItem(row, 3, QTableWidgetItem("N/D"))
                 continue
 
-            criterios = e6.construir_criterios(df.loc[[path]])
-            cumplidos = int(criterios.sum(axis=1).iloc[0])
-            veredicto = e6.veredicto(cumplidos)
-            diag_texto = f"{'Tiña Corporis' if veredicto == 'es tiña' else 'No Tiña / Otra'} ({cumplidos}/6 criterios)"
+            es_tina = resultado["veredicto"] == "tiña"
+            diag_texto = (f"{'Tiña Corporis' if es_tina else 'No Tiña / Otra'} "
+                          f"({resultado['votos_tina']}/{resultado['validos']} votos)")
+            item = QTableWidgetItem(diag_texto)
+            item.setForeground(Qt.GlobalColor.darkRed if es_tina else Qt.GlobalColor.darkBlue)
+            self.tabla_diagnostico.setItem(row, 1, item)
 
-            ratio = df.loc[path, "ratio_eritema"]
-            ratio_texto = "N/D" if pd.isna(ratio) else f"{ratio:.2f}"
-
-            ent_diff = df.loc[path, "ent_diff"]
-            con_diff = df.loc[path, "con_diff"]
-            if pd.isna(ent_diff) or pd.isna(con_diff):
-                textura_texto = "N/D"
-            else:
-                textura_texto = f"ΔENT {ent_diff:+.2f} / ΔCON {con_diff:+.2f}"
-
-            self.tabla_diagnostico.setItem(row, 1, QTableWidgetItem(diag_texto))
-            self.tabla_diagnostico.setItem(row, 2, QTableWidgetItem(ratio_texto))
-            self.tabla_diagnostico.setItem(row, 3, QTableWidgetItem(textura_texto))
+            for col, d in enumerate(resultado["detalle"], start=2):
+                if d["voto_tina"] is None:
+                    texto = "N/D"
+                else:
+                    texto = f"{d['valor']:.4g}  ({'tiña' if d['voto_tina'] else 'no tiña'})"
+                self.tabla_diagnostico.setItem(row, col, QTableWidgetItem(texto))
 
         self.stack.setCurrentIndex(6)
 
@@ -699,8 +703,8 @@ class MainWindow(QMainWindow):
         layout.addLayout(h_layout)
         return frame
 
-    def crear_tarjeta_e5(self, nombre, res_e1, res_e4, descriptores):
-        """Tarjeta de la Etapa 5: zonas usadas (borde/centro) + descriptores numéricos calculados."""
+    def crear_tarjeta_e5(self, nombre, res_e1, res_e4, resultado):
+        """Tarjeta de la Etapa 5: zonas usadas + descriptores elegidos con su umbral y su voto."""
         frame = QFrame()
         frame.setStyleSheet("background: #ffffff; border-radius: 8px; border: 1px solid #dcdcdc; padding: 8px;")
         layout = QVBoxLayout(frame)
@@ -714,7 +718,7 @@ class MainWindow(QMainWindow):
 
         canales_e5 = [
             (rgb, "Original (RGB)"),
-            (img_zonas, "Zonas (Borde/Centro)"),
+            (img_zonas, "Zonas (Perilesional/Borde/Centro)"),
         ]
 
         for display, texto_etiqueta in canales_e5:
@@ -736,19 +740,20 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(h_layout)
 
-        def _fmt(valor):
-            if valor is None or (isinstance(valor, float) and np.isnan(valor)):
-                return "N/D"
-            return f"{valor:.3f}"
+        lineas = []
+        for d in resultado["detalle"]:
+            signo = "&gt;" if d["sentido"] == "mayor" else "&lt;"   # escapado: el texto es HTML
+            if d["voto_tina"] is None:
+                voto = "N/D"
+            else:
+                voto = "<span style='color:#c0392b'>tiña</span>" if d["voto_tina"] else "no tiña"
+            valor = "N/D" if d["voto_tina"] is None else f"{d['valor']:.4g}"
+            lineas.append(f"{d['descriptor']}: <b>{valor}</b> (tiña si {signo} {d['umbral']:.4g}) → {voto}")
 
         lbl_datos = QLabel(
-            "<small>"
-            f"Circularidad: <b>{_fmt(descriptores.get('circularidad'))}</b> &nbsp;·&nbsp; "
-            f"Dim. fractal borde: <b>{_fmt(descriptores.get('dim_fractal_borde'))}</b><br>"
-            f"Ratio eritema (borde/centro): <b>{_fmt(descriptores.get('ratio_eritema'))}</b><br>"
-            f"Entropía borde−centro: <b>{_fmt(descriptores.get('ent_diff'))}</b> &nbsp;·&nbsp; "
-            f"Contraste borde−centro: <b>{_fmt(descriptores.get('con_diff'))}</b>"
-            "</small>"
+            "<small>" + "<br>".join(lineas) +
+            f"<br>Votos tiña: <b>{resultado['votos_tina']}/{resultado['validos']}</b> → "
+            f"<b>{resultado['veredicto']}</b></small>"
         )
         lbl_datos.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_datos.setStyleSheet("color: #212121; padding-top: 4px;")
@@ -761,4 +766,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec())

@@ -12,7 +12,8 @@ from scipy.ndimage import median_filter
 
 K_MEDIANA = 7
 
-
+# En esta funcion se aplica un filtro de mediana k x k a un canal (L* o a*) pero sin mezclar el fondo con la piel. 
+# Para ello, se rellena el fondo con la mediana de los píxeles de piel antes de aplicar el filtro.
 def mediana_con_mascara(canal, mascara, k=K_MEDIANA):
     """Filtro de mediana k x k que no mezcla el fondo con la piel."""
     canal = canal.astype(np.float32)
