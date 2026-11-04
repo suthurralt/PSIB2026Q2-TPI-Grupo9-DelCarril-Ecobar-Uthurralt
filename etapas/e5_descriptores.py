@@ -30,6 +30,8 @@ def cuantizar_L(L, niveles=NIVELES):
 
     L = np.asarray(L, dtype=float)
 
+    # Si la matriz es de 255, la convertimos a 0-100, porque sino quedaría una matriz gigante
+    # al dope
     if np.nanmax(L) > 100.5:
         L = L / 255.0 * 100.0
 
@@ -50,6 +52,8 @@ def glcm_enmascarada(imagen, mascara, niveles, distancia, angulo):
     que pertenezcan a la región indicada por la máscara.
 
     Se consideran ambas direcciones de cada par (GLCM simétrica).
+    
+    Se arma a mano porque la función de skimage graycomatrix no permite enmascarar la imagen.
     """
 
     alto, ancho = imagen.shape
@@ -57,6 +61,7 @@ def glcm_enmascarada(imagen, mascara, niveles, distancia, angulo):
     # Desplazamiento según distancia y orientación
     rad = np.deg2rad(angulo)
 
+    # Convierte los ángulos en un desplazamiento
     dr = int(round(-np.sin(rad) * distancia))
     dc = int(round(np.cos(rad) * distancia))
 
@@ -79,6 +84,7 @@ def glcm_enmascarada(imagen, mascara, niveles, distancia, angulo):
     m1 = mascara[r1_ini:r1_fin, c1_ini:c1_fin]
     m2 = mascara[r2_ini:r2_fin, c2_ini:c2_fin]
 
+    # Se queda con los píxeles que estén dentro de la máscara
     validos = m1 & m2
 
     if not validos.any():
@@ -90,6 +96,7 @@ def glcm_enmascarada(imagen, mascara, niveles, distancia, angulo):
     # Construcción de la matriz de coocurrencia
     indices = valores1 * niveles + valores2
 
+    # Con bincount se arma la matriz de coocurrencia
     conteos = np.bincount(
         indices,
         minlength=niveles * niveles
@@ -97,7 +104,7 @@ def glcm_enmascarada(imagen, mascara, niveles, distancia, angulo):
 
     matriz = conteos.reshape(niveles, niveles).astype(float)
 
-    # Simetría y normalización
+    # Simetría (se le suma la traspuesta) y normalización
     matriz = matriz + matriz.T
 
     total = matriz.sum()
@@ -118,6 +125,7 @@ def calcular_descriptores(L, mascara):
 
     from skimage.feature import graycoprops
 
+    # Cuantiza L* a niveles enteros, si hay menos de 100 píxeles en la máscara, devuelve None
     Lq = cuantizar_L(L)
 
     mascara = np.asarray(mascara, dtype=bool)
@@ -141,6 +149,8 @@ def calcular_descriptores(L, mascara):
     valores = {nombre: [] for nombre in descriptores}
     entropias = []
 
+    # Para cada distancia y ángulo, se llama a la función anterior (glcm_enmascarada) 
+    # y se calcula la GLCM. Luego, se calculan los descriptores y la entropía de la distribución de coocurrencias.
     for distancia in DISTANCIAS:
         for angulo in ANGULOS:
 
@@ -154,6 +164,7 @@ def calcular_descriptores(L, mascara):
             resultados["n_pares"] += n_pares
 
             for nombre in descriptores:
+                # Se calcula el descriptor usando graycoprops, que espera una matriz 4D, por eso se agrega un par de dimensiones nuevas.
                 valor = graycoprops(
                     matriz[:, :, np.newaxis, np.newaxis],
                     nombre
@@ -163,6 +174,7 @@ def calcular_descriptores(L, mascara):
 
             # Entropía de la distribución de coocurrencias
             p = matriz[matriz > 0]
+            # Entropía se calcula aparte, ya que graycoprops no la calcula directamente
             entropia = -np.sum(p * np.log2(p))
 
             entropias.append(float(entropia))
@@ -180,12 +192,104 @@ def calcular_descriptores(L, mascara):
 
 
 # --------------------------------------------------
-# Procesamiento de todos los archivos NPZ
+# Visualización: GLCM promedio y mapas locales
 # --------------------------------------------------
 
+def desplazamiento(distancia, angulo):
+    """(dr, dc) del par de píxeles para una distancia y un ángulo en grados."""
+    rad = np.deg2rad(angulo)
+    return int(round(-np.sin(rad) * distancia)), int(round(np.cos(rad) * distancia))
+
+
+def glcm_promedio(L, mascara, distancia=1, niveles=NIVELES):
+    """
+    GLCM normalizada de una región, promediada en los 4 ángulos.
+    Es la matriz que "ven" los descriptores (para graficarla).
+    """
+    Lq = cuantizar_L(L, niveles)
+    mascara = np.asarray(mascara, dtype=bool)
+    matrices = []
+    for angulo in ANGULOS:
+        m, _ = glcm_enmascarada(Lq, mascara, niveles, distancia, angulo)
+        if m is not None:
+            matrices.append(m)
+    if not matrices:
+        return None
+    return np.mean(matrices, axis=0)
+
+
+def mapas_glcm_locales(L, ventana=15, distancia=1, niveles=NIVELES):
+    """
+    Mapas locales de contraste, disimilitud y homogeneidad GLCM.
+
+    Estas tres propiedades solo dependen de la diferencia (i - j) de cada par,
+    así que su valor en una ventana es el promedio de f(i - j) sobre los pares
+    de la ventana: se calcula exacto con un filtro de media (rápido), promediando
+    los 4 ángulos como en calcular_descriptores.
+    """
+    from scipy.ndimage import uniform_filter
+
+    Lq = cuantizar_L(L, niveles).astype(float)
+    alto, ancho = Lq.shape
+    funciones = {
+        "contrast": lambda d: d ** 2,
+        "dissimilarity": np.abs,
+        "homogeneity": lambda d: 1.0 / (1.0 + d ** 2),
+    }
+    suma = {k: np.zeros_like(Lq) for k in funciones}
+    peso = np.zeros_like(Lq)
+
+    for angulo in ANGULOS:
+        dr, dc = desplazamiento(distancia, angulo)
+        diferencia = np.zeros_like(Lq)
+        valido = np.zeros_like(Lq)
+        r0, r1 = max(0, -dr), min(alto, alto - dr)
+        c0, c1 = max(0, -dc), min(ancho, ancho - dc)
+        diferencia[r0:r1, c0:c1] = Lq[r0:r1, c0:c1] - Lq[r0 + dr:r1 + dr, c0 + dc:c1 + dc]
+        valido[r0:r1, c0:c1] = 1.0
+        n = uniform_filter(valido, ventana, mode="constant")
+        for nombre, f in funciones.items():
+            suma[nombre] += uniform_filter(f(diferencia) * valido, ventana, mode="constant") / np.maximum(n, 1e-9)
+        peso += 1.0
+
+    return {k: v / peso for k, v in suma.items()}
+
+
+def mapa_entropia_glcm(L, ventana=21, paso=6, distancia=1, niveles=NIVELES):
+    """
+    Mapa local de entropía GLCM: la GLCM se arma en ventanas de
+    ventana x ventana (4 ángulos) cada `paso` píxeles y el resultado
+    se interpola al tamaño de la imagen.
+    """
+    import cv2
+
+    Lq = cuantizar_L(L, niveles)
+    alto, ancho = Lq.shape
+    mitad = ventana // 2
+    filas = np.arange(mitad, alto - mitad, paso)
+    columnas = np.arange(mitad, ancho - mitad, paso)
+    mapa = np.zeros((len(filas), len(columnas)))
+    todo = np.ones((ventana, ventana), dtype=bool)
+
+    for i, r in enumerate(filas):
+        for j, c in enumerate(columnas):
+            parche = Lq[r - mitad:r + mitad + 1, c - mitad:c + mitad + 1]
+            matrices = [glcm_enmascarada(parche, todo, niveles, distancia, a)[0] for a in ANGULOS]
+            p = np.mean(matrices, axis=0)
+            p = p[p > 0]
+            mapa[i, j] = -np.sum(p * np.log2(p))
+
+    return cv2.resize(mapa, (ancho, alto), interpolation=cv2.INTER_LINEAR)
+
+
+# --------------------------------------------------
+# Procesamiento de todos los archivos NPZ
+# --------------------------------------------------
+# Devuelve lo que se armó en las funciones anteriores en un DataFrame y lo guarda en un CSV.
 def procesar_todos_npz(
     carpeta_npz="../resultados/Etapa_4",
-    carpeta_salida="../resultados/Etapa_5"
+    carpeta_salida="../resultados/Etapa_5",
+    patron="e4_*.npz"
 ):
 
     carpeta_npz = Path(carpeta_npz)
@@ -193,7 +297,7 @@ def procesar_todos_npz(
 
     carpeta_salida.mkdir(parents=True, exist_ok=True)
 
-    archivos = sorted(carpeta_npz.glob("e4_roi_TC*.npz"))
+    archivos = sorted(carpeta_npz.glob(patron))
 
     if not archivos:
         print("No se encontraron archivos NPZ.")

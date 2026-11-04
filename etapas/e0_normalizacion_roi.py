@@ -52,7 +52,9 @@ def normalizar_espacialmente(corte_array, tamano_destino=(512, 512)):
     """
     if corte_array is None or corte_array.size == 0:
         raise ValueError("El recorte ingresado está vacío y no se puede normalizar.")
-
+    
+    # Acá INTER_AREA se usa para reducir el tamaño de la imagen sin perder calidad.
+    # Calcula los píxeles como el promedio de los píxeles vecinos, lo que es ideal para reducir imágenes.
     roi_norm = cv2.resize(corte_array, tamano_destino, interpolation=cv2.INTER_AREA)
     return np.ascontiguousarray(roi_norm, dtype=np.uint8)
 

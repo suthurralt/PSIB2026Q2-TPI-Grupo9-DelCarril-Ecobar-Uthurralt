@@ -19,21 +19,26 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import binary_fill_holes
 
 
-def _grabcut_lesion(rgb, iters=5):
+def _grabcut_lesion(rgb, iters=5): # Esta funcion aplica el algoritmo GrabCut para segmentar la lesión en la imagen RGB proporcionada.
     h, w = rgb.shape[:2]
     yy, xx = np.mgrid[:h, :w]
+    # d es la distancia de cada píxel al centro de la imagen, normalizada por el tamaño de la imagen. Se utiliza para definir las regiones de fondo y primer plano.
     d = np.sqrt(((xx - w / 2) / (w / 2)) ** 2 + ((yy - h / 2) / (h / 2)) ** 2)
 
+    # Inicialmente, todos los píxeles se consideran posible fondo.
     m = np.full((h, w), cv2.GC_PR_BGD, np.uint8)
-    m[d < 0.80] = cv2.GC_PR_FGD
-    m[d < 0.30] = cv2.GC_FGD
-    m[d > 1.05] = cv2.GC_BGD            
+    m[d < 0.80] = cv2.GC_PR_FGD # Los píxeles donde la d < 0,8 se consideran probables fondo (probable foreground).
+    m[d < 0.30] = cv2.GC_FGD # Los píxeles donde la d < 0,3 se consideran primer plano seguro (foreground).
+    m[d > 1.05] = cv2.GC_BGD # Los píxeles donde la d > 1,05 se consideran fondo seguro (background).
     b = int(0.03 * min(h, w))
     m[:b, :] = m[-b:, :] = m[:, :b] = m[:, -b:] = cv2.GC_BGD
 
+    # Convierte la imag RGB a Lab para que el algoritmo GrabCut pueda trabajar en el espacio de color Lab, que es más adecuado para la segmentación basada en color.
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
     bgd = np.zeros((1, 65), np.float64)
     fgd = np.zeros((1, 65), np.float64)
+    
+    # Se aplica grabCut sobre la imagen Lab, con la máscara que indica las regiones de fondo y primer plano, y se actualizan los modelos de fondo y primer plano.
     cv2.grabCut(lab, m, None, bgd, fgd, iters, cv2.GC_INIT_WITH_MASK)
     return (m == cv2.GC_FGD) | (m == cv2.GC_PR_FGD)
 
