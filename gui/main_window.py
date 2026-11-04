@@ -397,7 +397,11 @@ class MainWindow(QMainWindow):
             
             # Tomar la máscara refinada en E3 si el usuario la editó; si no, la automática de E3
             mascara_final = self.mascaras_manuales.get(path, res_e3["mascara_lesion"])
-            
+
+            nombre_exp = Path(path).name
+            if not nombre_exp.startswith("roi_"):
+              nombre_exp = f"roi_{nombre_exp}"
+        
             res_e4 = procesar_etapa4(mascara_final, res_e2)
             guardar_visualizacion_e4(res_e1, res_e4, path)
             exportar_e4(res_e1, res_e2, res_e4, path)
