@@ -24,7 +24,7 @@ from etapas.e0_normalizacion_roi import (
 )
 from etapas.e1_mascara_lab import procesar_etapa1, guardar_visualizacion_e1
 from etapas.e2_mejoramiento import procesar_etapa2, guardar_visualizacion_e2
-from etapas.e3_segmentacion_superpixeles import procesar_etapa3, guardar_visualizacion_e3
+from etapas.e3_segmentacion import procesar_etapa3, guardar_visualizacion_e3
 from etapas.e4_morfologia import procesar_etapa4, guardar_visualizacion_e4, exportar_e4, pintar_zonas, _contorno
 from etapas import e6_clasificacion
 
@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.crear_pantalla_0_recorte())                                                        # Índice 0
         self.stack.addWidget(self.crear_pantalla_etapa(1, "Etapa 1: Espacio de Color CIELAB", 0, 2, "Ir a Mejoramiento ->")) # Índice 1
         self.stack.addWidget(self.crear_pantalla_etapa(2, "Etapa 2: Mejoramiento y Resta Periférica", 1, 3, "Ir a Segmentación ->")) # Índice 2
-        self.stack.addWidget(self.crear_pantalla_etapa(3, "Etapa 3: Segmentación (SLIC + K-Means)", 2, 4, "Ir a Morfología ->"))   # Índice 3
+        self.stack.addWidget(self.crear_pantalla_etapa(3, "Etapa 3: Segmentación (GrabCut)", 2, 4, "Ir a Morfología ->"))   # Índice 3
         self.stack.addWidget(self.crear_pantalla_etapa(4, "Etapa 4: Limpieza Morfológica", 3, 5, "Ir a Texturas ->"))             # Índice 4
         self.stack.addWidget(self.crear_pantalla_etapa(5, "Etapa 5: Descriptores de Textura (GLCM + LBP)", 4, 6, "Ir a Diagnóstico Final ->"))# Índice 5
         self.stack.addWidget(self.crear_pantalla_6_diagnostico())                                                   # Índice 6
@@ -742,7 +742,7 @@ class MainWindow(QMainWindow):
 
         lineas = []
         for d in resultado["detalle"]:
-            signo = "&gt;" if d["sentido"] == "mayor" else "&lt;"   # escapado: el texto es HTML
+            signo = "&gt;" if d["sentido"] == "mayor" else "&lt;"   
             if d["voto_tina"] is None:
                 voto = "N/D"
             else:
@@ -766,4 +766,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec())
