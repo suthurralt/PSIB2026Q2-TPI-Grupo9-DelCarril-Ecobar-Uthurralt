@@ -3,20 +3,20 @@
         {
             "descriptor": "dif_BC__lbp_9",
             "sentido": "menor",
-            "umbral": -0.000156864509315853,
-            "AUC": 0.078
+            "umbral": -0.0009055333395140736,
+            "AUC": 0.087
         },
         {
-            "descriptor": "dif_LP__glcm_contrast",
-            "sentido": "mayor",
-            "umbral": 0.0888462120630241,
-            "AUC": 0.828
+            "descriptor": "dif_LP__lbp_7",
+            "sentido": "menor",
+            "umbral": -0.0036861543079274956,
+            "AUC": 0.113
         },
         {
-            "descriptor": "dif_LP__lbp_2",
-            "sentido": "mayor",
-            "umbral": 1.574065413266661e-05,
-            "AUC": 0.822
+            "descriptor": "dif_LP__glcm_correlation",
+            "sentido": "menor",
+            "umbral": -0.023342013230368275,
+            "AUC": 0.16
         }
     ],
     "regla": "cada descriptor vota tiña si valor > umbral (sentido 'mayor') o valor < umbral ('menor'); tiña si vota tiña más de la mitad",
@@ -28,26 +28,23 @@
         "CD (178)",
         "CD (188)",
         "CD (205)",
-        "CD (217)",
         "CD (239)",
-        "EC (22)",
+        "CD (50)",
+        "CD (56)",
         "EC (37)",
         "EC (371)",
-        "EC (381)",
-        "EC (385)",
         "EC (462)",
         "EC (58)",
-        "EC (66)",
         "EC (78)",
         "TC_01_PMC",
-        "TC_02_dermnet",
         "TC_03_GSA",
         "TC_04_GSA",
         "TC_05_dermnet",
         "TC_06_ medico",
         "TC_07_medico",
-        "TC_08_wmc",
-        "TC_09_medico",
-        "TC_10_MM"
+        "TC_EN_01",
+        "TC_EN_02",
+        "TC_GA_01",
+        "TC_GA_02"
     ]
 }
