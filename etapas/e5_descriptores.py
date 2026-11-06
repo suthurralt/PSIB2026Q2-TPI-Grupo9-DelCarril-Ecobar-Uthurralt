@@ -1,3 +1,41 @@
+"""
+Etapa 5 (parte GLCM): descriptores de textura de la matriz de co-ocurrencia de niveles
+de gris (GLCM) sobre el canal L* SIN filtrar, calculados por zona de la lesión.
+
+Entrada: los archivos resultados/Etapa_4/e4_*.npz, que traen el canal L* y las máscaras
+booleanas de las cuatro zonas (lesion, borde, centro y perilesional).
+
+Qué hace:
+  1. Cuantiza L* a 32 niveles enteros (acepta L* en 0-100 o codificado en 0-255).
+  2. Arma la GLCM a mano (glcm_enmascarada), usando solo los pares de píxeles que caen
+     dentro de la máscara de la zona, porque graycomatrix de skimage no permite enmascarar.
+     La matriz es simétrica (se suma la traspuesta) y está normalizada.
+  3. La calcula para las distancias 1 y 2 y los ángulos 0, 45, 90 y 135 grados, y promedia
+     los resultados entre las 8 combinaciones.
+  4. De cada GLCM obtiene contraste, disimilitud, homogeneidad, energía y correlación
+     (con graycoprops de skimage) y la entropía de Shannon en bits (calculada acá, porque
+     graycoprops no la ofrece).
+
+Salida de calcular_descriptores: diccionario con 'contrast', 'dissimilarity',
+'homogeneity', 'energy', 'correlation', 'entropy', 'n_pixeles' y 'n_pares', o None si la
+zona tiene menos de MIN_PIXELES (100) píxeles o ninguna GLCM válida.
+
+procesar_todos_npz recorre todos los .npz, calcula los descriptores de las cuatro zonas
+y guarda en la carpeta de salida:
+  - descriptores_texturales.csv: una fila por imagen y zona (con una columna 'estado')
+  - configuracion.json: parámetros usados (canal, niveles, distancias, ángulos, etc.)
+Las rutas por defecto ("../resultados/...") asumen que se ejecuta desde una subcarpeta
+del repositorio (por ejemplo, desde etapas/); desde la raíz hay que pasar las rutas.
+
+Este módulo calcula los descriptores por zona. Las diferencias entre zonas
+(borde − centro y lesión − perilesional) no se calculan acá.
+
+Además incluye funciones para visualización: glcm_promedio (la GLCM de una región,
+promediada en los 4 ángulos, con distancia 1), mapas_glcm_locales (mapas de contraste, disimilitud y
+homogeneidad con ventana de 15 px, calculados exactos con un filtro de media porque solo
+dependen de la diferencia i − j) y mapa_entropia_glcm (mapa de entropía con ventana de
+21 px cada 6 px, interpolado al tamaño de la imagen).
+"""
 
 from pathlib import Path
 import numpy as np

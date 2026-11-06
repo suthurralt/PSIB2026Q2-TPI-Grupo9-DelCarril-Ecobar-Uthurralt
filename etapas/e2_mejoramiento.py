@@ -1,8 +1,24 @@
 """
-Etapa 2 — Mejoramiento.
-
-Entrada: L*, a* y la máscara de piel de la etapa 1.
-Salida: Canales suavizados, ecualizados y con resta de piel periférica.
+Etapa 2: Mejoramiento.
+ 
+Entrada: diccionario de la Etapa 1 (canales L* y a* de la ROI de 512x512 y la
+máscara válida, que en la práctica es True en toda la ROI).
+ 
+Qué hace:
+  1. Filtro de mediana de 7x7 sobre a* y sobre L* (elimina ruido impulsivo sin
+     difuminar los bordes de la lesión).
+  2. Ecualización del histograma del a* filtrado, calculada solo con los
+     píxeles de la máscara. Resultado en [0, 1]. Sirve para visualizar y para
+     los métodos de segmentación por umbral.
+  3. Eritema relativo a la piel periférica: a*_diff = max(0, a*_filtrado -
+     mediana de a*_filtrado en un marco de 30 px en el perímetro de la ROI).
+     Es el exceso de rojo respecto de la piel de esa misma foto.
+  4. L* se conserva sin filtrar ('L') para el análisis de textura de la
+     Etapa 5, porque la mediana borra las escamas y pápulas que se quieren
+     medir. También se devuelve L* filtrado ('L_suave').
+ 
+Salida: diccionario con 'mascara', 'a_suave', 'a_eq', 'a_diff', 'L' (sin
+filtrar) y 'L_suave'.
 """
 from pathlib import Path
 import cv2
@@ -12,8 +28,10 @@ from scipy.ndimage import median_filter
 
 K_MEDIANA = 7
 
-# En esta funcion se aplica un filtro de mediana k x k a un canal (L* o a*) pero sin mezclar el fondo con la piel. 
-# Para ello, se rellena el fondo con la mediana de los píxeles de piel antes de aplicar el filtro.
+# Filtro de mediana k x k sobre un canal (L* o a*). Los píxeles fuera de la
+# máscara se reemplazan por la mediana de los píxeles válidos antes de filtrar,
+# para no mezclar fondo con piel. Como la máscara de la Etapa 1 es True en toda
+# la ROI, en la práctica no se reemplaza ningún píxel.
 def mediana_con_mascara(canal, mascara, k=K_MEDIANA):
     """Filtro de mediana k x k que no mezcla el fondo con la piel."""
     canal = canal.astype(np.float32)
@@ -49,7 +67,16 @@ def obtener_mascara_periferia(shape, ancho_borde_px=30):
 
 
 def procesar_etapa2(e1, k=K_MEDIANA):
-    """Aplica el mejoramiento a la salida de la etapa 1 (dict con L, a, mascara)."""
+    """Aplica el mejoramiento a la salida de la Etapa 1 (usa 'L', 'a' y 'mascara').
+ 
+    Devuelve un diccionario con:
+      - 'mascara': máscara válida (la misma de la Etapa 1)
+      - 'a_suave': a* con filtro de mediana
+      - 'a_eq': a* filtrado y ecualizado, en [0, 1]
+      - 'a_diff': eritema relativo = max(0, a_suave - mediana de a_suave en la periferia)
+      - 'L': L* original sin filtrar (para la textura de la Etapa 5)
+      - 'L_suave': L* con filtro de mediana
+    """
     a_suave, mascara = mediana_con_mascara(e1["a"], e1["mascara"], k)
     L_suave, _ = mediana_con_mascara(e1["L"], e1["mascara"], k)
     a_eq = ecualizar_con_mascara(a_suave, mascara)

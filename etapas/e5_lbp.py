@@ -1,3 +1,44 @@
+"""
+Etapa 5 (parte LBP): descriptores de textura con Local Binary Patterns (LBP) sobre el
+canal L* SIN filtrar, calculados por zona de la lesión.
+
+Entrada: los archivos resultados/Etapa_4/e4_*.npz, que traen el canal L* y las máscaras
+booleanas de las cuatro zonas (lesion, borde, centro y perilesional).
+
+Qué hace:
+  1. Convierte L* (rango 0-100) a uint8 y calcula la imagen de códigos LBP con skimage:
+     P = 8 vecinos, radio R = 1, método "uniform".
+  2. Con el método "uniform", el código de cada píxel es:
+       0..P  -> patrón uniforme (a lo sumo 2 transiciones); el valor es la cantidad de
+                vecinos con L* mayor o igual que el del píxel central
+       P + 1 -> patrón no uniforme (textura desordenada o ruidosa)
+     Es decir, 10 códigos posibles (lbp_0 a lbp_9). Por ejemplo, lbp_0 es un píxel más
+     claro que todos sus vecinos y lbp_8 es un píxel más oscuro o igual a todos ellos
+     (punto oscuro o zona plana).
+  3. Para cada zona, arma el histograma normalizado de códigos (suma 1) usando solo los
+     píxeles de la máscara cuyos 8 vecinos también están en la máscara (la máscara se
+     erosiona con un cuadrado de 3x3). Así el patrón de cada píxel se calcula sin salir
+     de la zona.
+  4. Calcula la entropía de Shannon del histograma, en bits (máximo log2(10) ≈ 3,32).
+     Una entropía alta indica una textura más heterogénea; una baja, más uniforme.
+
+Salida de calcular_lbp: diccionario con 'lbp_0' ... 'lbp_9' (fracción de píxeles con cada
+código), 'lbp_entropia' y 'n_pixeles' (píxeles usados, después de la erosión), o None si
+no queda ningún píxel. A diferencia del módulo de GLCM, no hay un mínimo de píxeles.
+
+procesar_todos_npz recorre todos los .npz, calcula los descriptores de las cuatro zonas y
+guarda descriptores_lbp.csv en la carpeta de salida: una fila por imagen y zona, con una
+columna 'estado' ("OK" o "SIN_PIXELES"). Las rutas por defecto ("../resultados/...")
+asumen que se ejecuta desde una subcarpeta del repositorio (por ejemplo, etapas/); desde la
+raíz hay que pasar las rutas.
+
+Este módulo calcula los descriptores por zona. Las diferencias entre zonas
+(borde − centro y lesión − perilesional) se calculan en e6_clasificacion.py. El clasificador
+final usa dos de estos descriptores en sus versiones relativas: dif_BC__lbp_9 y dif_LP__lbp_7.
+"""
+
+
+
 import numpy as np
 import pandas as pd
 
@@ -43,12 +84,11 @@ def calcular_lbp(L, mascara, P=P, R=R):
     Calcula descriptores LBP para una región de la imagen.
     """
 
-    # Calcular imagen LBP (ver imagen_lbp)
+    # Calcular imagen LBP 
     imagen_lbp_ = imagen_lbp(L, P, R)
 
-    # Evitar píxeles cercanos al borde de la máscara --> a cada píxel de la máscara 
-    # se le aplica una erosión con un elemento estructurante circular de radio R. 
-    # Esto asegura que solo se consideren los píxeles que tienen vecinos válidos para el cálculo del LBP.
+    # Se erosiona la máscara con un cuadrado de 3x3 (los 8 vecinos) para quedarse solo con
+   # los píxeles cuyo patrón LBP se calcula íntegramente dentro de la zona.
     estructura = np.ones((2 * R + 1, 2 * R + 1), dtype=bool)
 
     mascara_interior = binary_erosion(
@@ -150,4 +190,4 @@ def procesar_todos_npz(
     print(f"Registros generados: {len(df)}")
     print(f"Archivo guardado en: {ruta_salida}")
 
-    return df
+    return df

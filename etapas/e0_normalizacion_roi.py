@@ -1,8 +1,7 @@
 """
 Módulo: e0_normalizacion_roi.py
 ===============================
-Etapa 0 del Pipeline Biomédico para Tinea Corporis.
-
+Etapa 0
 Responsabilidades:
 1. Ingesta de imágenes en espacio de color RGB.
 2. Normalización espacial estandarizada a 512x512 píxeles.
