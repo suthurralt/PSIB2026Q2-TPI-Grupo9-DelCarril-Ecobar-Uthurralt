@@ -1,20 +1,28 @@
-"""Etapa 4 — Morfología: zonas de la lesión.
-
-Entrada: la lesión (máscara RELLENA: edición manual o segmentación automática de la
-etapa 3) y la salida de la etapa 2 (a_suave, máscara de piel).
-
-Salida, por imagen:
-  - lesion           la lesión completa (rellena), recortada a la piel.
-  - borde / centro   la lesión partida por EROSIÓN: centro = lesión erosionada,
-                     borde = lesión − centro (una banda de ancho proporcional al tamaño).
-  - perilesional     piel sana alrededor: DILATACIÓN de la lesión − lesión. Es la
-                     referencia de color de esa piel (tono e iluminación de esa foto).
+"""Etapa 4: morfología y zonas de la lesión.
+ 
+Entrada: la lesión (máscara RELLENA: segmentación automática de la Etapa 3 o la
+máscara corregida a mano en la interfaz) y la salida de la Etapa 2 (a_suave y la
+máscara válida, que en la práctica es True en toda la ROI).
+ 
+Salida de procesar_etapa4, por imagen:
+  - lesion           la lesión completa (rellena), recortada a la piel válida.
+  - borde / centro   la lesión partida por EROSIÓN con un disco de radio
+                     w = max(3, 0,30 * r_eq) px, donde r_eq = sqrt(área / π) es el
+                     radio del círculo de igual área. centro = lesión erosionada,
+                     borde = lesión − centro (banda de ancho proporcional al tamaño).
+  - perilesional     piel sana alrededor: DILATACIÓN de la lesión con un disco de
+                     20 px, menos la lesión, intersectada con la piel válida.
+  - ancho_borde      el ancho w usado para el borde, en píxeles.
   - ref_mediana / ref_mad / ref_fuente
-                     mediana y MAD de a* en la piel de referencia, para normalizar
-                     por foto en la etapa 5.
-
-La etapa 5 mide números continuos por zona (contraste de a* borde vs. centro,
-textura de L* en borde y centro, etc.) usando estas máscaras.
+                     mediana y MAD (escalado por 1,4826, con mínimo 0,5) de a* filtrado
+                     en la piel de referencia, y de qué región se tomaron (perilesional,
+                     piel fuera de la lesión, o la propia lesión; ver referencia_piel).
+ 
+La Etapa 5 usa las máscaras lesion, borde, centro y perilesional para calcular los
+descriptores de textura (GLCM y LBP sobre L*) por zona y las diferencias entre zonas
+(borde − centro, lesión − perilesional). La referencia de color de la piel
+(ref_mediana, ref_mad, ref_fuente) se guarda en el .npz, pero el clasificador final
+no la usa.
 """
 from pathlib import Path
 

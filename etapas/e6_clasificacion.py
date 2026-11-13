@@ -1,5 +1,5 @@
 """
-Etapa 6 — Clasificación tiña / no tiña a partir de los descriptores de textura.
+Etapa 6: clasificación tiña / no tiña a partir de los descriptores de textura.
 
 Uso desde la interfaz (después de la Etapa 4):
 
@@ -15,10 +15,12 @@ Cómo decide:
   * Se arman descriptores relativos de la misma foto:
         dif_BC__X = X(borde) − X(centro)
         dif_LP__X = X(lesión) − X(perilesional)
-  * El notebook etapa5_texturas.ipynb elige unos pocos descriptores, con un umbral
+  * El notebook análisis_para_elegir_descriptores.ipynb elige unos pocos descriptores, con un umbral
     y un sentido cada uno, y los guarda en resultados/Etapa_5/clasificador.json.
-  * Cada descriptor elegido vota "tiña" si su valor cae del lado de las tiñas del
-    umbral. Si vota tiña más de la mitad, el veredicto es "tiña".
+    * Cada descriptor elegido vota "tiña" si su valor cae del lado de las tiñas del
+    umbral. Un descriptor que no se puede calcular (zona vacía o muy chica) no vota.
+    Si vota tiña más de la mitad de los descriptores válidos, el veredicto es "tiña"; 
+    si no hay ninguno válido, es "no tiña".
 
 Para cambiar la regla no se toca este archivo: se vuelve a correr el notebook.
 """
@@ -80,7 +82,7 @@ def clasificar(L, zonas, clasificador=None):
       veredicto   "tiña" / "no tiña"
       votos_tina  cuántos descriptores votaron tiña
       validos     cuántos descriptores se pudieron calcular
-      detalle     lista con descriptor, valor, umbral, sentido y voto de cada uno
+      detalle     lista con descriptor, sentido, umbral, AUC, valor y voto_tina de cada uno
     """
     if clasificador is None:
         clasificador = cargar_clasificador()

@@ -1,32 +1,25 @@
-"""Etapa 1 — Enmascarado del fondo y conversión RGB -> CIELAB.
-
-Problema: varias imágenes de SkinDisNet tienen el fondo recortado y reemplazado
-por blanco. Esos píxeles no son piel y, si se incluyen, distorsionan la
-umbralización.
-
-Criterio para el fondo:
-  1. Candidatos: píxeles muy claros (V alto) y casi sin color (S baja) en HSV.
-  2. Solo se considera fondo una región candidata que TOCA EL BORDE de la imagen
-     y tiene un área mínima. Esto evita borrar la descamación blanquecina o los
-     reflejos que están dentro de la lesión, que también son claros y poco
-     saturados pero quedan rodeados de piel.
-  3. Se agranda el fondo unos píxeles (dilatación) para descartar la franja de
-     transición piel/blanco, donde el JPEG mezcla ambos colores.
-
-Conversión a Lab: L* = luminosidad (0-100), a* = eje verde(-)/rojo(+),
-b* = eje azul(-)/amarillo(+). El eritema se mide en a*, separado del brillo.
+"""Etapa 1: Conversión RGB -> CIELAB.
+ 
+Recibe la ROI RGB de 512x512 generada en la Etapa 0 y la convierte al espacio
+CIE L*a*b*, separando la información de color de la de brillo:
+ 
+  - L*: luminosidad (0-100). Se reserva para el análisis de textura (Etapa 5),
+        porque la descamación y las pápulas se manifiestan como variaciones
+        locales de brillo.
+  - a*: eje verde(-)/rojo(+). Se usa como medida del eritema.
+  - b*: eje azul(-)/amarillo(+).
+ 
+Máscara válida: como la ROI ya fue recortada en la Etapa 0 alrededor de la
+lesión (con un margen de piel sana), no se descarta ningún píxel. La máscara
+devuelta es una matriz booleana con True en toda la ROI. Se mantiene en la
+salida para que las etapas siguientes (que reciben una máscara de píxeles
+válidos) tengan una interfaz uniforme.
 """
 from pathlib import Path
 
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-
-# Parámetros fijos (no se aprenden de los datos; la máscara se calcula imagen por imagen)
-V_MIN_FONDO = 235          # brillo mínimo (0-255) para ser candidato a fondo
-S_MAX_FONDO = 25           # saturación máxima (0-255) para ser candidato a fondo
-AREA_MIN_FONDO = 0.005     # fracción mínima de la imagen para aceptar una región como fondo
-MARGEN_PX = 5              # píxeles que se descartan en el borde piel/fondo
 
 
 def rgb_a_lab(rgb):

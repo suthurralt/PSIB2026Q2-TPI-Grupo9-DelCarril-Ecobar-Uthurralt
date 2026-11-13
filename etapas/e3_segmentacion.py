@@ -1,15 +1,33 @@
 """
-Módulo: e3_segmentacion_superpixeles.py
-=======================================
 Etapa 3: Segmentación de la lesión por graph cut (GrabCut) en Lab.
-
-Método semiautomático: la ROI recortada a mano en el paso 0 está centrada en la lesión,
-y GrabCut se inicializa con un prior geométrico sobre esa ROI:
-  - centro (30% del radio)         -> lesión segura
-  - elipse (80% del radio)         -> probable lesión
-  - esquinas y marco de 3%         -> fondo seguro
-  - resto                          -> probable fondo
-El color (Lab) decide el contorno dentro de la franja "probable".
+ 
+Método semiautomático: la ROI recortada a mano en la Etapa 0 está centrada en la
+lesión, así que GrabCut se inicializa con un prior geométrico sobre esa ROI. El
+prior se define con la distancia elíptica normalizada al centro de la ROI,
+d = sqrt(((x - W/2)/(W/2))^2 + ((y - H/2)/(H/2))^2):
+ 
+  - d < 0,30                        -> lesión segura
+  - 0,30 <= d < 0,80                -> lesión probable
+  - 0,80 <= d <= 1,05               -> fondo probable
+  - d > 1,05 (esquinas) y marco
+    del 3 % del lado                -> fondo seguro
+ 
+GrabCut no cambia las etiquetas seguras; el color (Lab) decide el contorno dentro
+de la franja de etiquetas "probables". Se usan 5 iteraciones y los modelos de
+mezcla de gaussianas por defecto de OpenCV (5 componentes por clase).
+ 
+Posprocesamiento sobre el resultado de GrabCut:
+  1. Intersección con la máscara válida de la Etapa 2 (en la práctica, toda la ROI).
+  2. Apertura con un elemento estructurante elíptico de 9x9 (elimina regiones
+     pequeñas y sueltas).
+  3. Se conserva solo la componente conexa de mayor área (se descartan lesiones de alrededor).
+  4. Relleno de huecos, para incorporar el centro aclarado de las lesiones anulares.
+ 
+Salida de procesar_etapa3: {'mascara_lesion': máscara booleana rellena de la lesión}.
+ 
+La corrección manual de la máscara (pincel y borrador) no está en este módulo: se
+hace desde la interfaz gráfica (gui/editor_mascara.py) y la máscara corregida
+reemplaza a la automática en las etapas siguientes.
 """
 
 from pathlib import Path
