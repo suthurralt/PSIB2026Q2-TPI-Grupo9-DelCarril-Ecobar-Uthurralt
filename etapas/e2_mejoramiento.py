@@ -17,6 +17,7 @@ K_MEDIANA = 7
 def mediana_con_mascara(canal, mascara, k=K_MEDIANA):
     """Filtro de mediana k x k que no mezcla el fondo con la piel."""
     canal = canal.astype(np.float32)
+    # En esta línea se selecciona canal cuando máscara es True y se pone la mediana cuando es False.
     relleno = np.where(mascara, canal, np.median(canal[mascara]))
     filtrado = median_filter(relleno, size=k, mode="reflect")
     return filtrado, mascara
@@ -36,7 +37,9 @@ def ecualizar_con_mascara(canal, mascara, n_niveles=256):
     salida[~mascara] = 0.0
     return salida
 
-
+# Esta función obtiene una máscara que representa el borde exterior de la ROI, 
+# con un ancho de borde especificado en píxeles. Esta máscara se utiliza para tomar el 
+# tono de piel sana en la periferia de la región de interés.
 def obtener_mascara_periferia(shape, ancho_borde_px=30):
     """Obtiene el marco exterior de la ROI para tomar el tono de piel sana."""
     h, w = shape[:2]

@@ -31,7 +31,6 @@ def cuantizar_L(L, niveles=NIVELES):
     L = np.asarray(L, dtype=float)
 
     # Si la matriz es de 255, la convertimos a 0-100, porque sino quedaría una matriz gigante
-    # al dope
     if np.nanmax(L) > 100.5:
         L = L / 255.0 * 100.0
 

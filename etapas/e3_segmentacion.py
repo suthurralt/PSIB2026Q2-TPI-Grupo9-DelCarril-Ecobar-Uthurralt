@@ -42,7 +42,9 @@ def _grabcut_lesion(rgb, iters=5): # Esta funcion aplica el algoritmo GrabCut pa
     cv2.grabCut(lab, m, None, bgd, fgd, iters, cv2.GC_INIT_WITH_MASK)
     return (m == cv2.GC_FGD) | (m == cv2.GC_PR_FGD)
 
-
+# Esta función procesa la etapa 3 de segmentación de la lesión, 
+# combinando la máscara de piel obtenida en la etapa 2 con la segmentación 
+# realizada por GrabCut.
 def procesar_etapa3(e1, e2):
     rgb = e1["rgb"]
     mascara_piel = e2["mascara"]

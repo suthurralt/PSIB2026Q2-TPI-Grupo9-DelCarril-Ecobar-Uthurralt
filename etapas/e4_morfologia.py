@@ -54,16 +54,21 @@ def zonas(lesion, piel, frac_borde=FRAC_BORDE, ancho_peri=ANCHO_PERILESIONAL):
         return {"lesion": lesion, "borde": vacio, "centro": vacio,
                 "perilesional": vacio, "ancho_borde": 0.0}
 
+    # Chequea el ancho para calcular el radio del circulo equivalente de la lesión, y que no sea menor a ANCHO_MIN.
     ancho = max(ANCHO_MIN, frac_borde * radio_equivalente(lesion))
-    extendida = (lesion | ~piel).astype(np.uint8)
+    # Erosión 
+    extendida = (lesion | ~piel).astype(np.uint8) # El fondo también se toma como lesión
     centro = cv2.erode(extendida, _disco(ancho), borderType=cv2.BORDER_CONSTANT,
-                       borderValue=1).astype(bool) & lesion
+                       borderValue=1).astype(bool) & lesion     # Se erosiona con cv2.erode
     borde = lesion & ~centro
     perilesional = cv2.dilate(lesion.astype(np.uint8), _disco(ancho_peri)).astype(bool) & ~lesion & piel
     return {"lesion": lesion, "borde": borde, "centro": centro,
             "perilesional": perilesional, "ancho_borde": ancho}
 
-
+# Ezta función calcula la mediana y el MAD de a* en la piel de referencia, 
+# siguiendo un orden de preferencia: primero se busca en la zona perilesional, 
+# luego en toda la piel fuera de la lesión, y finalmente en la propia lesión si las 
+# otras zonas no tienen suficientes píxeles.
 def referencia_piel(a, z, piel):
     """Mediana y MAD de a* en la piel de referencia.
 
